@@ -13,7 +13,7 @@ authors = [{name = "Hwang Chan Dong"}]
 dependencies = []            # 코어(예측·추천·CLI)는 표준 라이브러리만
 
 [project.urls]
-Homepage = "https://github.com/dingdongri/fitcfg"
+Homepage = "https://github.com/dingdongri/tunepilot"
 
 [project.optional-dependencies]
 hf = ["transformers>=4.46", "peft>=0.12", "torch>=2.1"]          # HF Trainer 플러그인 · measure-cpu

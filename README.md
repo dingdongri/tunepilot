@@ -20,9 +20,9 @@ GPU가 여러 장이면 모델을 GPU에 나눠 올리는 3D 병렬화(TP·PP)�
 ## 설치
 
 ```bash
-pip install "git+https://github.com/dingdongri/fitcfg"          # 코어: 표준 라이브러리만 (GPU·torch 불필요)
-pip install "fitcfg[hf] @ git+https://github.com/dingdongri/fitcfg"   # + HF Trainer 플러그인 · CPU 측정
-pip install "fitcfg[ui] @ git+https://github.com/dingdongri/fitcfg"   # + 웹 UI
+pip install "git+https://github.com/dingdongri/tunepilot"          # 코어: 표준 라이브러리만 (GPU·torch 불필요)
+pip install "fitcfg[hf] @ git+https://github.com/dingdongri/tunepilot"   # + HF Trainer 플러그인 · CPU 측정
+pip install "fitcfg[ui] @ git+https://github.com/dingdongri/tunepilot"   # + 웹 UI
 ```
 저장소를 받아서 쓸 때는 `python -m fitcfg ...` 그대로 동작한다.
 

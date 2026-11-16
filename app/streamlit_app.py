@@ -307,7 +307,7 @@ with tab_plugin:
     targs.append("bf16=True" if rec.dtype == "bf16" else "fp16=True")
     st.markdown("이미 학습 코드가 있다면 번들 대신 **콜백 한 줄**만 붙이면 됩니다. 학습 시작 직전에 지금 설정의 메모리를 "
                 "예측해 OOM이면 미리 알려 주고(들어가는 설정 제안), 끝나면 예측 vs 실측을 `fitcfg_run.json`에 남깁니다.")
-    st.code("pip install \"fitcfg[hf] @ git+https://github.com/dingdongri/fitcfg\"", language="bash")
+    st.code("pip install \"fitcfg[hf] @ git+https://github.com/dingdongri/tunepilot\"", language="bash")
     st.code(f"""from transformers import Trainer, TrainingArguments
 from fitcfg.integrations.hf import FitcfgCallback
 
