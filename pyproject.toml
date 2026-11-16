@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fitcfg"
-version = "0.6.0"
+version = "0.6.1"
 description = "소규모 GPU 파인튜닝 설정 추천기: 학습 전에 메모리·속도를 예측하고 OOM 없는 가장 빠른 설정과 실행 스크립트를 만든다"
 readme = "README.md"
 requires-python = ">=3.10"

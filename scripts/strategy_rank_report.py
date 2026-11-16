@@ -43,7 +43,7 @@ gpu = next((r.get("gpu_name") for d in by.values() for r in d.values() if r.get(
 L = [f"# GPU 2장에서 전략 선택 검증 ({gpu} ×2)\n",
      "전략(DDP · ZeRO-1/2/3 · offload)마다 도구가 고른 가장 빠른 설정을 실제로 학습 (도구가 만든 번들 그대로 · alpaca · "
      "앞 3스텝은 속도 측정 제외). 원자료 `data/strategy_runs_kaggle.jsonl`, 실행 `scripts/strategy_rank_kaggle.sh`\n"]
-tot = dict(sc=0, ok=0, n=0, top1=0, top1_n=0, pair_ok=0, pair_n=0, naive_oom=0, naive_n=0)
+tot = dict(sc=0, ok=0, n=0, top1=0, top1_n=0, top1_ran=0, pair_ok=0, pair_n=0, naive_oom=0, naive_n=0)
 peak_err, tps_err, regrets, body = [], [], [], []
 for sc, d in sorted(by.items()):
     multi = {s: r for s, r in d.items() if s not in ("naive", "single")}
@@ -81,12 +81,13 @@ for sc, d in sorted(by.items()):
         body.append(f"| {NAMES.get(s, s)} | {cfg(r)} | {res} | {pk:.1f} | {f'{mk:.2f}' if mk else '-'} | {ek} | "
                     f"{pt:,.0f} | {f'{mt:,.0f}' if mt else '-'} | {et} | {pr} | {mr} |")
     if len(okm) >= 2:
-        pick = next((s for s in pred_rank if s in okm), None)      # 도구가 고르는 전략 (실패한 전략은 다음 순위)
-        fastest = meas_rank[0]
-        regret = (okm[fastest]["tokens_per_s"] - okm[pick]["tokens_per_s"]) / okm[fastest]["tokens_per_s"] * 100
-        regrets.append(regret)
+        pick, fastest = pred_rank[0], meas_rank[0]                 # 도구가 고르는 전략 = 예측 1위
         tot["top1_n"] += 1
-        tot["top1"] += regret <= 3.0
+        tot["top1_ran"] += pick in okm
+        if pick in okm:
+            regret = (okm[fastest]["tokens_per_s"] - okm[pick]["tokens_per_s"]) / okm[fastest]["tokens_per_s"] * 100
+            regrets.append(regret)
+            tot["top1"] += regret <= 3.0
         ss = list(okm)
         for i in range(len(ss)):
             for j in range(i + 1, len(ss)):
@@ -95,8 +96,12 @@ for sc, d in sorted(by.items()):
                     continue
                 tot["pair_n"] += 1
                 tot["pair_ok"] += (pi > pj) == (okm[ss[i]]["tokens_per_s"] > okm[ss[j]]["tokens_per_s"])
-        body.append(f"\n- 도구가 고른 전략: **{NAMES[pick]}** · 실제 가장 빠른 전략: **{NAMES[fastest]}** "
-                    f"→ 손해 {regret:.1f}%" + (" ✅" if regret <= 3.0 else " ⚠️"))
+        if pick in okm:
+            body.append(f"\n- 도구가 고른 전략: **{NAMES[pick]}** · 실제 가장 빠른 전략: **{NAMES[fastest]}** "
+                        f"→ 손해 {regret:.1f}%" + (" ✅" if regret <= 3.0 else " ⚠️"))
+        else:
+            body.append(f"\n- 도구가 고른 전략: **{NAMES[pick]}** → ❌ 학습 실패({(multi[pick].get('note') or '')[:20]}) · "
+                        f"실제 가장 빠른 전략: **{NAMES[fastest]}**")
     one = by.get(sc.replace("_2g", "_1g"), {}).get("single")
     if one and one.get("ok") == 1 and one.get("tokens_per_s") and okm:
         b = max(okm.values(), key=lambda r: r["tokens_per_s"])
@@ -111,6 +116,7 @@ S = ["\n## 요약\n", "| 항목 | 결과 |", "|---|---|",
      f"| 시나리오 (GPU 2장 · Full) | {tot['sc']}개 |",
      f"| HF 기본값 → OOM | {tot['naive_oom']}/{tot['naive_n']} |",
      f"| 전략별 최고 설정 학습 성공 | **{tot['ok']}/{tot['n']}** |",
+     f"| 도구가 고른 전략(예측 1위)이 학습 성공 | **{tot['top1_ran']}/{tot['top1_n']}** |",
      f"| 도구가 고른 전략이 실제 최고속(3% 이내) | **{tot['top1']}/{tot['top1_n']}**"
      + (f" (손해 최대 {max(regrets):.1f}%)" if regrets else "") + " |",
      f"| 두 전략의 빠르기 순서가 맞음 (예측 차이 3% 이상인 쌍) | **{tot['pair_ok']}/{tot['pair_n']}** |",

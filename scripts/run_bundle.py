@@ -83,6 +83,9 @@ def main():
                or ("NVML_SUCCESS == r" in out and "CUDACachingAllocator" in out))
         rec.update(ok=0, note="OOM" if oom else ("TIMEOUT" if rc == -999 else f"ERROR rc={rc}: "
                                                    + (out.strip().splitlines() or [""])[-1][:150]))
+        # 실패 원인을 나중에 확인할 수 있게 오류 줄을 남긴다 (OOM이면 'Tried to allocate …' 줄)
+        err = [l.strip() for l in out.splitlines() if "Error" in l or "out of memory" in l.lower()]
+        rec["error_tail"] = " | ".join(err[-3:])[:600]
     Path(a.log).parent.mkdir(parents=True, exist_ok=True)
     with open(a.log, "a", encoding="utf-8") as f:
         f.write(json.dumps(rec, ensure_ascii=False) + "\n")

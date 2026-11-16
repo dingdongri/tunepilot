@@ -238,6 +238,9 @@ def _row_design(m: Measurement, f, phase: str) -> tuple[list[float], float]:
     if phase == "fwd_bwd":
         x = [f.act_h_basis / GB, f.act_i_basis / GB, f.ckpt_basis / GB, f.logit_basis / GB, 0.0,
              f.attn_sq_basis / GB, 1.0]
+        # 보정하지 않는 구조 항 (fp16 혼합정밀 Full 전용 — 보정 데이터가 bf16이면 0)
+        d = DEFAULT_CONSTANTS
+        base += (d.amp_h * f.amp_h_basis + d.amp_i * f.amp_i_basis + f.amp_known + f.accum_grads) / GB
     else:
         x = [0.0, 0.0, 0.0, 0.0, f.temp_basis / GB, 0.0, 1.0]
         base += f.known_gradients / GB
@@ -298,6 +301,11 @@ def fit(meas: list[Measurement], target: str = "device", lam: float = 0.01,
                 keep = {k: getattr(mp, k) for k in PEAK_FIELDS if k != "overhead_gb"}
                 start = replace(start, **keep)
             out[method] = fit_peak(grp, start, target, lam, fixed=fixed)
+            if not any(not m.cfg.flash_attn for m in grp):
+                # 이 method를 FlashAttention 없는 GPU에서 잰 데이터가 없으면 attention 행렬 상수는 보정되지 않고
+                # 사전값(2.0)에 머문다 → 다른 method까지 합쳐 맞춘 공통값을 쓴다 (softmax 출력이 fp32라 method와 무관하게 ≈4 B).
+                # Kaggle T4 ×2 실측(2026-11-16, Full ZeRO-1): 사전값으로는 −16.6%, 공통값으로는 −0.5%
+                out[method] = replace(out[method], attn_sq_bytes=out["default"].attn_sq_bytes)
     return out
 
 

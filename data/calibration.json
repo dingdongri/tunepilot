@@ -33,7 +33,7 @@
       "ckpt_h": 1.4634,
       "logit_bytes": 19.5415,
       "opt_temp": 0.8601,
-      "attn_sq_bytes": 2.0,
+      "attn_sq_bytes": 3.9946,
       "nf4_extra": 0.0166,
       "qlora_nonquant_bytes": 3.9991,
       "overhead_gb": 1.228
@@ -250,5 +250,8 @@
     }
   },
   "throughput_version": 2,
-  "throughput_refit": "2026-10-30T23:07:05"
+  "throughput_refit": "2026-10-30T23:07:05",
+  "notes": [
+    "2026-11-16: full.attn_sq_bytes 2.0(사전값) → 공통 보정값. Full을 FlashAttention 없는 GPU에서 잰 보정 데이터가 없어 사전값에 머물러 있었음 (Kaggle T4 ×2 실측으로 확인, calibration.fit에 같은 규칙 반영)"
+  ]
 }

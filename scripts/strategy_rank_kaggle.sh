@@ -10,10 +10,15 @@ STEPS=${STEPS:-12}
 
 # 이름  모델  seq  GPU수  전략(all = 들어가는 전략 전부)
 SCENARIOS=(
-  "q05_2g   Qwen/Qwen2.5-0.5B           1024 2  all"
-  "q05_1g   Qwen/Qwen2.5-0.5B           1024 1  single"
-  "s360_2g  HuggingFaceTB/SmolLM2-360M  1024 2  ddp zero1 zero2 zero3 zero-offload"
-  "s360_1g  HuggingFaceTB/SmolLM2-360M  1024 1  single"
+  "q05_2g      Qwen/Qwen2.5-0.5B           1024 2  all"
+  "q05_1g      Qwen/Qwen2.5-0.5B           1024 1  single"
+  "s360_2g     HuggingFaceTB/SmolLM2-360M  1024 2  ddp zero1 zero2 zero3 zero-offload"
+  "s360_1g     HuggingFaceTB/SmolLM2-360M  1024 1  single"
+  # fp16 혼합정밀 Full(DeepSpeed 없음: DDP · GPU 1장) 경로 추가 확인 — seq 512
+  "q05s512_2g  Qwen/Qwen2.5-0.5B           512  2  ddp zero1"
+  "q05s512_1g  Qwen/Qwen2.5-0.5B           512  1  single"
+  "s360s512_2g HuggingFaceTB/SmolLM2-360M  512  2  ddp zero1"
+  "s360s512_1g HuggingFaceTB/SmolLM2-360M  512  1  single"
 )
 for sc in "${SCENARIOS[@]}"; do
   read -r name model seq ngpu strategies <<< "$sc"

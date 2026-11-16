@@ -91,7 +91,9 @@ def main():
         out = subprocess.run([sys.executable, str(REPO / "scripts" / "run_bundle.py"), str(d), "--label", label,
                               "--max-steps", str(a.steps), "--log", a.log, "--timeout", str(a.timeout)],
                              text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT).stdout
-        print("\n".join(out.strip().splitlines()[-3:]), flush=True)
+        lines = out.strip().splitlines()
+        failed = any(l.startswith("❌") for l in lines[-3:])
+        print("\n".join(lines[-(20 if failed else 3):]), flush=True)
 
 
 if __name__ == "__main__":

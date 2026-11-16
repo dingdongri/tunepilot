@@ -156,7 +156,7 @@ def _strategies(req: PlanRequest) -> list[str]:
 def _make_config(req: PlanRequest, strategy: str, micro: int, ckpt: bool, optim: str) -> TrainConfig:
     zs, off_o, off_p = STRATEGIES[strategy][:3]
     return TrainConfig(model=req.model, method=req.method, gpus=req.gpus, batch_size=micro,
-                       seq_len=req.seq_len, grad_checkpointing=ckpt, optim=optim,
+                       seq_len=req.seq_len, grad_accum=_grad_accum(req, micro), grad_checkpointing=ckpt, optim=optim,
                        zero_stage=zs, cpu_offload_optim=off_o, cpu_offload_params=off_p,
                        lora_rank=req.lora_rank, lora_targets=req.lora_targets,
                        dtype="bf16" if req.gpu.bf16 else "fp16", flash_attn=req.gpu.flash)

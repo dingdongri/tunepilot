@@ -97,7 +97,7 @@ fitcfg/
   app/streamlit_app.py    # 웹 UI
   scripts/                # 측정 스윕·보정·시뮬레이션·리포트 (GPU 서버용 포함)
   examples/               # demo.py (예측·추천), hf_plugin_example.py (플러그인)
-  tests/                  # 60개 (GPU 불필요): python -m pytest -q   · .github/workflows/tests.yml (torch 없이 / CPU torch로)
+  tests/                  # 64개 (GPU 불필요): python -m pytest -q   · .github/workflows/tests.yml (torch 없이 / CPU torch로)
   data/  reports/         # 실측 데이터·보정 결과·리포트
 ```
 

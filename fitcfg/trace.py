@@ -28,6 +28,7 @@ class TraceResult:
     mem_model_gb: float       # 모델(+LoRA) 준비 직후 살아 있는 바이트
     mem_steady_gb: float      # 학습 스텝 후 zero_grad 뒤 (weights + optimizer states)
     peak_alloc_gb: float      # 학습 구간 peak (max_memory_allocated 와 같은 의미)
+    peak_fwd_gb: float = 0.0  # 그중 forward·backward 구간만의 peak (optimizer step 제외) — 항 분리용
 
 
 def _make_tracker():
@@ -74,7 +75,7 @@ def _make_tracker():
 def trace_step(model_key: str, method: str, batch: int, seq: int, ckpt: bool,
                optim: str = "adamw", lora_rank: int = 16, lora_targets: str = "attn",
                steps: int = 2, dtype: str = "bf16", n_layers: int | None = None,
-               vocab: int | None = None) -> TraceResult:
+               vocab: int | None = None, accum: int = 1) -> TraceResult:
     """fitcfg 모델 프리셋 구조로 HF 모델을 가짜 텐서로 만들어 학습 스텝을 추적한다.
     측정 하네스(scripts/measure.py)와 같은 루프: autocast + loss.backward + step + zero_grad.
 
@@ -82,7 +83,8 @@ def trace_step(model_key: str, method: str, batch: int, seq: int, ckpt: bool,
     base Linear는 16bit로 두고 prepare_model_for_kbit_training 처럼 나머지(임베딩·norm·lm_head)를
     fp32로 올린 LoRA로 추적한다. 가중치 크기는 다르지만(→ 분석 시 mem_model을 빼고 봄)
     활성값·logits의 dtype 흐름은 QLoRA와 같다.
-    n_layers / vocab: 항을 분리하기 위한 절제(ablation) 실험용 덮어쓰기."""
+    n_layers / vocab: 항을 분리하기 위한 절제(ablation) 실험용 덮어쓰기.
+    accum: gradient accumulation 횟수 (HF Trainer처럼 마이크로스텝 사이에 기울기를 지우지 않는다 → 다음 forward 동안 남아 있음)."""
     import dataclasses
     import torch
     from torch._subclasses.fake_tensor import FakeTensorMode
@@ -106,7 +108,7 @@ def trace_step(model_key: str, method: str, batch: int, seq: int, ckpt: bool,
     tuners_utils.BaseTunerLayer._move_adapter_to_device_of_base_layer = lambda self, *a, **k: None
     try:
         return _run(FakeTensorMode(), _make_tracker()(), load_dtype, torch_dtype, spec, method,
-                    batch, seq, ckpt, lora_rank, lora_targets, steps)
+                    batch, seq, ckpt, lora_rank, lora_targets, steps, accum)
     finally:
         torch.nn.Module.to = orig_to
         tuners_utils.BaseTunerLayer._move_adapter_to_device_of_base_layer = orig_move
@@ -139,7 +141,7 @@ def _recast(root, select, dtype):
 
 
 def _run(fake, tracker, load_dtype, torch_dtype, spec, method, batch, seq, ckpt,
-         lora_rank, lora_targets, steps):
+         lora_rank, lora_targets, steps, accum=1):
     import gc
     import torch
     from transformers import AutoModelForCausalLM
@@ -176,19 +178,24 @@ def _run(fake, tracker, load_dtype, torch_dtype, spec, method, batch, seq, ckpt,
         opt = torch.optim.AdamW(params, lr=1e-5, foreach=True)
         ids = torch.randint(0, spec.vocab, (batch, seq))
         tracker.reset_peak()
+        peak = peak_fwd = 0
         for _ in range(steps):
-            with torch.autocast("cpu", dtype=torch_dtype):
-                out = model(input_ids=ids, labels=ids)
-            out.loss.backward()
+            for _ in range(accum):
+                with torch.autocast("cpu", dtype=torch_dtype):
+                    out = model(input_ids=ids, labels=ids)
+                (out.loss / accum if accum > 1 else out.loss).backward()
+                del out
+            peak_fwd = max(peak_fwd, tracker.peak)
             opt.step()
             opt.zero_grad(set_to_none=True)
-            del out
             gc.collect()
-        peak, steady = tracker.peak, tracker.cur
+            peak = max(peak, tracker.peak)
+            tracker.reset_peak()
+        steady = tracker.cur
         del model, opt, params, ids
         gc.collect()
     return TraceResult(mem_model_gb=round(mem_model / GiB, 4), mem_steady_gb=round(steady / GiB, 4),
-                       peak_alloc_gb=round(peak / GiB, 4))
+                       peak_alloc_gb=round(peak / GiB, 4), peak_fwd_gb=round(peak_fwd / GiB, 4))
 
 
 def _hf_config(spec):

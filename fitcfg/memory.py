@@ -89,6 +89,12 @@ class CostConstants:
     # 층마다 정규화가 2개 더 있는 구조(Gemma-2·3의 post-attention·post-FFN norm)가 저장하는 추가 활성값
     # (bytes / 토큰·레이어·hidden·추가 norm 1개). 절제 실험: Gemma-2 층 = 같은 크기 Llama 층 + 8.0 B/H (norm 2개)
     norm_bytes: float = 4.0
+    # fp16 혼합정밀 Full(bf16 미지원 GPU · DeepSpeed 없음): 가중치가 fp32라 임베딩 출력부터 residual 흐름이 fp32로 남는다
+    # (fp32 + fp16 = fp32) → norm 입출력 등이 16bit 대신 fp32로 저장됨. 층·토큰당 추가 바이트 = amp_h·H + amp_i·I.
+    # FakeTensor 절제 실험(같은 설정을 fp16-AMP / bf16으로 추적한 차이, SmolLM2-360M·Qwen2.5-0.5B): 14.0 / 2.3
+    # Kaggle T4 실측(2026-11-16)에서 이 경로의 추천 설정 4개가 모두 OOM → 추가
+    amp_h: float = 14.0
+    amp_i: float = 2.3
     # NF4 양자화 부가 메모리(파라미터당 바이트). double-quant 기준 ≈ 1/64 + 4/(64·256)
     nf4_extra: float = 0.016
     # QLoRA에서 양자화되지 않는 임베딩/lm_head의 파라미터당 바이트.
@@ -207,7 +213,7 @@ class TrainConfig:
     gpus: int = 1
     batch_size: int = 1              # per-GPU micro-batch
     seq_len: int = 2048
-    grad_accum: int = 1              # 메모리엔 영향 적음(참고용)
+    grad_accum: int = 1              # fp16 혼합정밀 Full에서만 메모리에 반영 (누적 중 fp32 기울기가 남음). plan()이 채움
     grad_checkpointing: bool = True
     optim: Optim = "adamw"
     zero_stage: int = 0              # 0/1/2/3 (FSDP full-shard ~ 3)
@@ -266,6 +272,11 @@ class Features:
     act_q_basis: float = 0.0          # B·S·(활성 레이어)·(q_dim − hidden)
     softcap_basis: float = 0.0        # B·S·V (logits softcapping 모델만)
     norm_basis: float = 0.0           # B·S·(활성 레이어)·hidden·(추가 norm 수)    # Flash 없는 GPU: (L 또는 1)·B·heads·S² → × attn_sq_bytes
+    # fp16 혼합정밀 Full (fp32 가중치 + autocast) 전용
+    amp_h_basis: float = 0.0          # B·S·(활성 레이어)·H → × amp_h
+    amp_i_basis: float = 0.0          # B·S·(활성 레이어)·I → × amp_i
+    amp_known: float = 0.0            # 상수 없이 정해지는 부분: 체크포인트 층 입력이 fp32(+2·B·S·L·H) + 임베딩·출력층 기울기가 fp32(+2·임베딩 파라미터)
+    accum_grads: float = 0.0          # 누적(grad_accum > 1) 중 다음 forward·backward 동안 남아 있는 fp32 기울기
 
     @property
     def known(self) -> float:
@@ -278,7 +289,8 @@ class Features:
                 + c.ckpt_h * self.ckpt_basis + c.logit_bytes * self.logit_basis
                 + c.attn_sq_bytes * self.attn_sq_basis
                 + c.act_q * self.act_q_basis + c.softcap_bytes * self.softcap_basis
-                + c.norm_bytes * self.norm_basis)
+                + c.norm_bytes * self.norm_basis
+                + c.amp_h * self.amp_h_basis + c.amp_i * self.amp_i_basis + self.amp_known + self.accum_grads)
 
     def optim_step(self, c: "CostConstants") -> float:
         """역전파 직후 optimizer step 시점: grad 전체 + optimizer 임시 버퍼 (overhead 제외)."""
@@ -311,8 +323,10 @@ def features(cfg: TrainConfig, model: ModelSpec,
     c = c or get_constants(cfg.method)
     P = model.n_params
     w = g = o = 0.0
+    # fp16 혼합정밀 Full: fp32 가중치 + fp16 autocast (HF Trainer fp16=True). DeepSpeed(ZeRO)는 모델을 fp16으로 바꾸므로 해당 없음
+    amp = cfg.method == "full" and cfg.dtype == "fp16" and not _uses_master_weights(cfg)
 
-    if cfg.method == "full" and cfg.dtype == "fp16" and not _uses_master_weights(cfg):
+    if amp:
         # fp16 AMP: fp32 가중치(4) + fp32 grad(4) + fp32 Adam m,v(8) / 8bit(2)
         w = P * 4.0
         g = P * 4.0
@@ -377,13 +391,21 @@ def features(cfg: TrainConfig, model: ModelSpec,
         known_weights=w, known_gradients=g, known_optimizer=o, known_persistent=persistent,
         act_h_basis=float(BS * n_act * H), act_i_basis=float(BS * n_act * I),
         ckpt_basis=float(BS * L * H) if cfg.grad_checkpointing else 0.0,
-        logit_basis=float(BS * model.vocab), temp_basis=float(trainable),
+        # fp32 파라미터의 AdamW 임시 버퍼는 16bit(보정 기준)의 2배. 8bit AdamW(bitsandbytes)는 Colab T4 실측과 그대로 맞아 제외
+        logit_basis=float(BS * model.vocab),
+        temp_basis=float(trainable) * (2.0 if (amp and cfg.optim == "adamw") else 1.0),
         ckpt=cfg.grad_checkpointing,
         attn_sq_basis=0.0 if cfg.flash_attn else
         float(n_act * cfg.batch_size * model.n_heads * cfg.seq_len ** 2),
         act_q_basis=float(BS * n_act * (model.q_dim - H)),
         softcap_basis=float(BS * model.vocab) if model.logit_softcap else 0.0,
         norm_basis=float(BS * n_act * H * model.extra_norms),
+        amp_h_basis=float(BS * n_act * H) if amp else 0.0,
+        amp_i_basis=float(BS * n_act * I) if amp else 0.0,
+        amp_known=((2.0 * BS * L * H if cfg.grad_checkpointing else 0.0) + 2.0 * model.embed_params) if amp else 0.0,
+        # HF Trainer는 누적 중 기울기를 지우지 않는다 → 두 번째 마이크로스텝부터 fp32 기울기 전체가 forward 내내 남음
+        # (추적으로 확인: 누적 2회면 peak가 정확히 기울기 크기만큼 증가)
+        accum_grads=g if (amp and cfg.grad_accum > 1) else 0.0,
     )
 
 
@@ -404,13 +426,14 @@ def estimate(cfg: TrainConfig, model: ModelSpec,
     f = features(cfg, model, c)
     fwd, step = f.fwd_bwd(c), f.optim_step(c)
     act = (c.act_h * f.act_h_basis + c.act_i * f.act_i_basis + c.ckpt_h * f.ckpt_basis
-           + c.attn_sq_bytes * f.attn_sq_basis + c.act_q * f.act_q_basis + c.norm_bytes * f.norm_basis)
+           + c.attn_sq_bytes * f.attn_sq_basis + c.act_q * f.act_q_basis + c.norm_bytes * f.norm_basis
+           + c.amp_h * f.amp_h_basis + c.amp_i * f.amp_i_basis + f.amp_known)
     overhead = c.overhead_gb * GB
     if cfg.zero_stage >= 3:
         overhead += ZERO3_FRAG * max(fwd, step)
     common = dict(weights=f.known_weights, overhead=overhead)
     if fwd >= step:
-        return MemoryBreakdown(**common, gradients=f.known_persistent, optimizer=f.known_optimizer,
+        return MemoryBreakdown(**common, gradients=f.known_persistent + f.accum_grads, optimizer=f.known_optimizer,
                                activations=act,
                                logits=c.logit_bytes * f.logit_basis + c.softcap_bytes * f.softcap_basis,
                                phase="fwd_bwd", other_phase_total=step + overhead)
