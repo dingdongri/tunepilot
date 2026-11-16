@@ -344,7 +344,7 @@ def features(cfg: TrainConfig, model: ModelSpec,
     persistent = 0.0
     if N > 1 and cfg.zero_stage == 0:
         # PyTorch DDP는 all-reduce용 gradient bucket을 항상 따로 잡는다(gradient_as_bucket_view=False 기본)
-        # (멀티 GPU 실측 전까지는 문헌 기반 가정)
+        # (Kaggle T4 ×2 실측으로 확인: LoRA·QLoRA DDP 메모리 예측 +3.6~4.6%)
         persistent = g
     if cfg.zero_stage >= 1:
         o /= N

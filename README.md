@@ -97,7 +97,7 @@ fitcfg/
   app/streamlit_app.py    # 웹 UI
   scripts/                # 측정 스윕·보정·시뮬레이션·리포트 (GPU 서버용 포함)
   examples/               # demo.py (예측·추천), hf_plugin_example.py (플러그인)
-  tests/                  # 53개 (GPU 불필요): python -m pytest -q   · .github/workflows/tests.yml (torch 없이 / CPU torch로)
+  tests/                  # 60개 (GPU 불필요): python -m pytest -q   · .github/workflows/tests.yml (torch 없이 / CPU torch로)
   data/  reports/         # 실측 데이터·보정 결과·리포트
 ```
 
@@ -110,17 +110,28 @@ fitcfg/
 - `e2e_report.md` — 시나리오별 기본값 vs 추천 1~3위 실측
 - `sim_3d_report_recal.md` — 하드웨어 5종 × 모델 2종 × 방법 3종의 3D 병렬화 판단 표
 
-## 알려진 한계
-- **GPU 여러 장의 통신 시간은 실측 전** — 3D 판단은 단일 GPU 실측으로 보정한 계산 시간 + 연결 대역폭 가정.
-  그래서 결과를 낙관·비관 두 값으로 보여 주고, 둘 다 1.1배 이상일 때만 추천한다.
-- 3D 추천은 계획(`parallel_plan.json`)까지만 생성. TP·PP 실행 스크립트 자동 생성은 아직 없다 (번들은 DP 최선 설정).
+## 검증 범위와 한계
+
+**실측으로 검증한 범위** — 같은 종류 GPU 1~2장, 한 대의 머신, 데이터 병렬(단일 GPU · DDP · ZeRO-1/2/3 · CPU offload).
+
+**한계**
+- GPU 여러 장은 Kaggle T4 ×2(PCIe) 1종만 실측 — 통신 대역폭 4.9 GB/s는 이 결과로 정함. GPU 3장 이상과 NVLink(문헌값 100 GB/s)는 실측 없음.
+- 안전계수(GPU 메모리의 89.5%)는 OOM을 피하려고 일부러 둔 여유 — 실제 최고속 설정이 메모리의 90% 이상을 쓰는 경우에는
+  그다음 안전한 설정을 고른다.
 - Gemma 계열은 구조 항(추가 norm·softcap) 반영 후에도 QLoRA에서 최대 18% 적게 나올 수 있어 여유 ×1.15~1.25 유지
   (실측상 놓친 OOM 0, 대신 다소 보수적).
-- CPU offload·ZeRO-3는 실측 1~2건 — ZeRO-3 할당기 단편화(예약 = 할당 × 1.76)와 CPU RAM 식은 그 결과로 보수적으로 잡음.
-- GPU 여러 장은 Kaggle T4 ×2(PCIe) 1종만 실측 — 통신 대역폭 4.9 GB/s는 이 결과로 정함. NVLink·3D 병렬화(TP·PP)·혼합 GPU는 계산 기반.
+- CPU offload·ZeRO-3는 실측이 적음 — ZeRO-3 할당기 단편화(예약 = 할당 × 1.76)와 CPU RAM 식은 그 결과로 보수적으로 잡음.
 - QLoRA는 CPU로 직접 흉내 낼 수 없어 `measure-cpu`는 "LoRA 측정 × 1.3 + 4bit 가중치" 규칙 (8계열 실측 5% 안팎).
 - 처리량은 A100 MIG·T4만 실측 → 측정 안 한 GPU(RTX 3090·4090 등)는 같은 세대(A100) 실측 상수를 쓰고 범위를 ±50%로 넓게 표시.
+  같은 GPU라도 실행 환경에 따라 ±7% 차이(Colab vs Kaggle T4).
 - MoE 모델 미지원.
+
+**향후 과제** (이번 범위 밖 — 실측할 장비가 없어 계산 기반까지만 구현)
+- **종류가 다른 GPU를 섞은 구성 · 3D 병렬화(TP·PP)**: 판단과 계획(`parallel_plan.json`: 어느 GPU에 몇 층)까지만 낸다.
+  GPU 사이 통신을 실측하지 못해 연결 대역폭 가정으로 계산하며, 그래서 통신이 계산과 겹치는 정도를 낙관·비관 두 가지로 보고
+  둘 다 1.1배 이상 빠를 때만 추천한다. TP·PP 실행 스크립트 자동 생성과 실측 검증이 남아 있다 (번들은 데이터 병렬 최선 설정).
+- NVLink 머신 · GPU 3~8장에서 통신 시간 식 재확인.
+- 웹 UI에 3D 판단 표시, 공개 데모 배포.
 
 ## 라이선스
 MIT — 누구나 자유롭게 쓰고 고치고 배포할 수 있음 (저작권 표시만 유지). [LICENSE](LICENSE)

@@ -21,6 +21,7 @@ sys.path.insert(0, str(REPO))
 from fitcfg import GPUS, PlanRequest, load_calibration, plan  # noqa: E402
 from fitcfg.recommend import _evaluate, _make_config, naive_config  # noqa: E402
 from fitcfg.models import get_model  # noqa: E402
+from fitcfg.memory import get_default_safety  # noqa: E402
 
 MODELS = ["llama-3.2-1b", "qwen2.5-3b", "qwen2.5-7b", "llama-3.1-8b"]
 METHODS = ["qlora", "lora", "full"]
@@ -33,7 +34,7 @@ MINUTES_PER_FAILED_TRY = 4.0      # 모델 로드 + OOM까지 걸리는 시간(�
 def manual_search(req: PlanRequest):
     """사람의 전형적인 수동 탐색 순서를 흉내 낸다. 반환: (실패 횟수, 처음 들어간 설정 or None)."""
     spec = get_model(req.model)
-    safety = 0.90 if req.safety is None else req.safety
+    safety = get_default_safety() if req.safety is None else req.safety
     strategy = "single" if req.gpus == 1 else "ddp"
     tries = []
     for ckpt in (False, True):                       # 1) 배치를 절반씩 → 2) checkpointing 켜고 다시
@@ -104,7 +105,7 @@ def main():
                 for n in GPU_COUNTS:
                     for s in SEQS:
                         req = PlanRequest(model=m, gpu=GPUS[g], gpus=n, method=meth, seq_len=s,
-                                          global_batch=16, cpu_ram_gb=128)
+                                          global_batch=16, cpu_ram_gb=128, check_3d=False)
                         res = plan(req, top_k=1)
                         naive = naive_config(req)
                         fails, manual = manual_search(req)
@@ -152,7 +153,7 @@ def main():
     md = f"""# 시나리오 벤치: HF Trainer 기본값 vs fitcfg (예측 기반 시뮬레이션)
 
 - 상수: {calib_note} · 시나리오 {n}개 = 모델 {len(MODELS)} × method {len(METHODS)} × GPU {len(GPU_KEYS)} × GPU 수 {GPU_COUNTS} × seq {SEQS}
-- 공통: global batch 16, CPU RAM 128GB, 안전계수 0.90
+- 공통: global batch 16, CPU RAM 128GB, 안전계수 {get_default_safety():.3g}
 - ⚠️ 모두 cost model **예측**으로 판정한 값이다. 예측 자체의 정확도는 `calibrate.py`(실측 MAPE, OOM 판정)로 따로 보인다.
 
 ## 요약
