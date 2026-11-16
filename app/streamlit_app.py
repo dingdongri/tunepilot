@@ -46,7 +46,7 @@ COMP_COLORS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300"]
 MUTED = "#8a8984"
 CALIB_PATH = REPO / "data" / "calibration.json"
 
-st.set_page_config(page_title="fitcfg — 파인튜닝 설정 추천기", page_icon="🧮", layout="wide")
+st.set_page_config(page_title="TunePilot — 파인튜닝 설정 추천기", page_icon="🧮", layout="wide")
 
 
 def metric(col, label, value, delta=None, delta_color="off", help=None):
@@ -140,7 +140,7 @@ with st.sidebar:
                            help="예측 오차·데이터 편차를 흡수하는 여유. 보정 리포트의 권장값이 기본입니다.")
 
 if model_error:
-    st.title("fitcfg")
+    st.title("TunePilot")
     st.info(model_error)
     st.stop()
 info = structure_of(model)
@@ -152,7 +152,7 @@ req = PlanRequest(model=model, gpu=gpu, gpus=n_gpus, method=method, seq_len=seq_
 res = plan(req, top_k=5)
 
 # ---------------------------------------------------------------- 헤더
-st.title("fitcfg")
+st.title("TunePilot")
 st.markdown("**실행 전에** GPU 메모리·처리량·학습 시간을 예측하고, OOM 없이 가장 빠른 파인튜닝 설정과 "
             "바로 돌릴 수 있는 학습 스크립트를 만들어 줍니다.")
 st.caption(f"📐 {calib_msg}")
