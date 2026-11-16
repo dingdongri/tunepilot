@@ -122,6 +122,8 @@ S = ["\n## 요약\n", "| 항목 | 결과 |", "|---|---|",
      f"| 두 전략의 빠르기 순서가 맞음 (예측 차이 3% 이상인 쌍) | **{tot['pair_ok']}/{tot['pair_n']}** |",
      f"| peak 메모리 예측 오차 | 평균 {mean(peak_err):.1f}% (범위 {rng(peak_err)}) |",
      f"| 속도 예측 오차 | 평균 {mean(tps_err):.1f}% (범위 {rng(tps_err)}) |"]
-Path(a.out).write_text("\n".join(L + S + body) + "\n", encoding="utf-8")
+extra = Path(a.out).with_name("strategy_rank_before.md")          # 손으로 쓴 부록 (수정 전 실행 기록 · 한계)
+tail = extra.read_text(encoding="utf-8") if extra.exists() else ""
+Path(a.out).write_text("\n".join(L + S + body) + "\n" + tail, encoding="utf-8")
 print("\n".join(S))
 print(f"-> {a.out}")
