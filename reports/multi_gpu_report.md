@@ -17,7 +17,7 @@
 ## 발견과 수정
 
 1. **GPU 1장 설정을 GPU 여러 장 머신에서 실행하면** HF Trainer가 자동으로 `nn.DataParallel`로 모든 GPU를 씀 →
-   메모리 +50%, 속도 1/4 (1차 실행: Qwen-3B QLoRA 13.0GB·190 tok/s vs 예측 8.7GB·401). 생성 `launch.sh`가 GPU 1장으로 고정
+   메모리 +50%, 속도 약 절반 (1차 실행: Qwen-3B QLoRA 13.0GB·190 tok/s vs 예측 8.7GB·401). 생성 `launch.sh`가 GPU 1장으로 고정
    (`CUDA_VISIBLE_DEVICES`) → 2차 실행 8.2GB·400 tok/s로 예측과 일치. **실제 사용자도 겪을 버그를 실측으로 찾음.**
 2. **통신 시간을 식에 넣음** (`throughput.py`): 예전엔 "장수가 2배면 효율 0.9배" 문헌 배수.
    이제 '보내는 바이트 ÷ 실효 대역폭' — DDP는 학습 파라미터 기울기를 optimizer step마다, ZeRO-2는 마이크로스텝마다,
